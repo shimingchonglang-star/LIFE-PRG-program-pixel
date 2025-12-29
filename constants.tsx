@@ -3,10 +3,11 @@ import { Quest, Translations, Language } from './types';
 
 export const INITIAL_QUESTS: Quest[] = [
   {
-    id: 'stay-up-late',
-    title: 'STAY UP LATE',
-    hpImpact: -1,
+    id: 'stay-up',
+    title: 'STAY UP',
+    hpImpact: -5,
     hungerImpact: 0,
+    xpImpact: 0,
     icon: '🌙',
     isCustom: false
   },
@@ -15,6 +16,7 @@ export const INITIAL_QUESTS: Quest[] = [
     title: 'EAT WELL',
     hpImpact: 2,
     hungerImpact: 2,
+    xpImpact: 0,
     icon: '🍗',
     isCustom: false
   },
@@ -23,14 +25,16 @@ export const INITIAL_QUESTS: Quest[] = [
     title: 'EXERCISE',
     hpImpact: 1,
     hungerImpact: -2,
+    xpImpact: 5,
     icon: '🏃',
     isCustom: false
   },
   {
     id: 'reading',
-    title: 'READ 30 MIN',
+    title: 'READING',
     hpImpact: 0,
     hungerImpact: -1,
+    xpImpact: 10,
     icon: '📖',
     isCustom: false
   }
@@ -45,10 +49,10 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settings: 'CONFIG',
     health: 'HEALTH',
     hunger: 'ENERGY',
+    xp: 'EXPERIENCE',
     oracle: 'THE ORACLE SAYS',
-    // English translation for quests
     quests: 'DAILY QUESTS',
-    systemLogs: 'SYSTEM MESSAGES',
+    systemLogs: 'SYSTEM LOGS',
     done: 'DONE',
     edit: 'EDIT',
     delete: 'DEL',
@@ -63,7 +67,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     off: 'OFF',
     reorder: 'MOVE',
     prevMonth: 'PREV',
-    nextMonth: 'NEXT'
+    nextMonth: 'NEXT',
+    status: 'Status',
+    summary: 'DAILY SUMMARY'
   },
   cn: {
     home: '主页',
@@ -71,8 +77,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settings: '设置',
     health: '生命',
     hunger: '饱食',
-    oracle: '神谕说',
-    // Chinese translation for quests
+    xp: '经验',
+    oracle: '当前生存状态',
     quests: '每日任务',
     systemLogs: '系统日志',
     done: '完成',
@@ -89,7 +95,9 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     off: '关',
     reorder: '排序',
     prevMonth: '上月',
-    nextMonth: '下月'
+    nextMonth: '下月',
+    status: '状态',
+    summary: '今日成就'
   },
   fr: {
     home: 'ACCUEIL',
@@ -97,10 +105,10 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     settings: 'CONFIG',
     health: 'SANTÉ',
     hunger: 'ÉNERGIE',
+    xp: 'EXPÉRIENCE',
     oracle: 'L\'ORACLE DIT',
-    // French translation for quests
     quests: 'QUÊTES',
-    systemLogs: 'MESSAGES SYSTÈME',
+    systemLogs: 'JOURNAL SYSTÈME',
     done: 'FAIT',
     edit: 'EDIT',
     delete: 'SUPPR',
@@ -115,6 +123,8 @@ export const TRANSLATIONS: Record<Language, Translations> = {
     off: 'NON',
     reorder: 'TRIER',
     prevMonth: 'PRÉC',
-    nextMonth: 'SUIV'
+    nextMonth: 'SUIV',
+    status: 'Statut',
+    summary: 'RÉSUMÉ'
   }
 };

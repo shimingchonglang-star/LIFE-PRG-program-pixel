@@ -15,7 +15,7 @@ const App: React.FC = () => {
   
   const [stats, setStats] = useState<PlayerStats>(() => {
     const saved = localStorage.getItem('life_rpg_stats');
-    return saved ? JSON.parse(saved) : { health: 10, hunger: 10, experience: 0 };
+    return saved ? JSON.parse(saved) : { health: 8, hunger: 6, experience: 6 };
   });
 
   const [quests, setQuests] = useState<Quest[]>(() => {
@@ -29,11 +29,12 @@ const App: React.FC = () => {
   });
 
   const [logs, setLogs] = useState<GameLog[]>([]);
-  const [motivation, setMotivation] = useState("Loading...");
+  const [motivation, setMotivation] = useState("Adventure awaits, traveler!");
   const [isEditing, setIsEditing] = useState<string | null>(null);
   const [viewDate, setViewDate] = useState(new Date());
+  const [selectedDay, setSelectedDay] = useState<DailyStats | null>(null);
   const [isYearPicker, setIsYearPicker] = useState(false);
-  const [clickEffect, setClickEffect] = useState<{id: string, x: number, y: number} | null>(null);
+  const [clickEffect, setClickEffect] = useState<{id: string, x: number, y: number, text: string} | null>(null);
 
   const t = useMemo(() => TRANSLATIONS[lang], [lang]);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -49,7 +50,7 @@ const App: React.FC = () => {
     const today = new Date().toISOString().split('T')[0];
     setHistory(prev => {
       const existingIdx = prev.findIndex(h => h.date === today);
-      const newEntry = { date: today, hp: stats.health, hunger: stats.hunger };
+      const newEntry = { date: today, hp: stats.health, hunger: stats.hunger, xp: stats.experience };
       if (existingIdx >= 0) {
         const next = [...prev];
         next[existingIdx] = newEntry;
@@ -57,14 +58,14 @@ const App: React.FC = () => {
       }
       return [...prev, newEntry];
     });
-  }, [stats.health, stats.hunger]);
+  }, [stats.health, stats.hunger, stats.experience]);
 
   const fetchMotivation = useCallback(async () => {
     const msg = await getDailyMotivation(stats.health, stats.hunger);
     setMotivation(msg);
   }, [stats.health, stats.hunger]);
 
-  useEffect(() => { fetchMotivation(); }, [fetchMotivation]);
+  useEffect(() => { fetchMotivation(); }, []);
 
   const hapticFeedback = (type: 'light' | 'medium' | 'heavy' = 'light') => {
     if (typeof navigator !== 'undefined' && navigator.vibrate) {
@@ -91,13 +92,19 @@ const App: React.FC = () => {
   const handleAction = (quest: Quest, e: React.MouseEvent) => {
     hapticFeedback('medium');
     playBeep(600 + (quest.hpImpact * 50));
-    setClickEffect({ id: quest.id, x: e.clientX, y: e.clientY });
+    
+    let effectText = "";
+    if (quest.hpImpact !== 0) effectText += `${quest.hpImpact > 0 ? '+' : ''}${quest.hpImpact}HP `;
+    if (quest.xpImpact && quest.xpImpact !== 0) effectText += `${quest.xpImpact > 0 ? '+' : ''}${quest.xpImpact}XP`;
+
+    setClickEffect({ id: quest.id, x: e.clientX, y: e.clientY, text: effectText });
     setTimeout(() => setClickEffect(null), 600);
 
     setStats(prev => ({
       ...prev,
       health: Math.min(MAX_STATS, Math.max(0, prev.health + quest.hpImpact)),
-      hunger: Math.min(MAX_STATS, Math.max(0, prev.hunger + quest.hungerImpact))
+      hunger: Math.min(MAX_STATS, Math.max(0, prev.hunger + quest.hungerImpact)),
+      experience: Math.min(MAX_STATS, Math.max(0, prev.experience + (quest.xpImpact || 0) / 10))
     }));
 
     setLogs(prev => [{
@@ -118,6 +125,7 @@ const App: React.FC = () => {
       icon: formData.get('icon') as string,
       hpImpact: parseInt(formData.get('hp') as string),
       hungerImpact: parseInt(formData.get('hunger') as string),
+      xpImpact: parseInt(formData.get('xp') as string),
       isCustom: true
     };
     
@@ -139,94 +147,115 @@ const App: React.FC = () => {
     [newQuests[index], newQuests[targetIndex]] = [newQuests[targetIndex], newQuests[index]];
     setQuests(newQuests);
     hapticFeedback('light');
+    playBeep(400, 0.05);
   };
 
   const isCN = lang === 'cn';
-  const fontSizeClass = fontSize === 'small' 
-    ? (isCN ? 'text-[15px]' : 'text-[12px]') 
-    : fontSize === 'large' 
-    ? (isCN ? 'text-[24px]' : 'text-[20px]') 
-    : (isCN ? 'text-[19px]' : 'text-[16px]');
+  
+  // Robust global font scaling
+  const fontSizeClass = useMemo(() => {
+    if (fontSize === 'small') return isCN ? 'text-[18px]' : 'text-[14px]';
+    if (fontSize === 'large') return isCN ? 'text-[28px]' : 'text-[24px]';
+    return isCN ? 'text-[22px]' : 'text-[18px]';
+  }, [fontSize, isCN]);
 
-  const pixelLabelClass = fontSize === 'small' 
-    ? (isCN ? 'text-[12px]' : 'text-[10px]') 
-    : fontSize === 'large' 
-    ? (isCN ? 'text-[16px]' : 'text-[14px]') 
-    : (isCN ? 'text-[14px]' : 'text-[12px]');
+  const labelFontClass = useMemo(() => {
+    if (fontSize === 'small') return isCN ? 'text-[14px]' : 'text-[12px]';
+    if (fontSize === 'large') return isCN ? 'text-[20px]' : 'text-[18px]';
+    return isCN ? 'text-[16px]' : 'text-[14px]';
+  }, [fontSize, isCN]);
 
-  // --- RENDERING ---
+  const getStatusAchievement = (hp: number, xp: number, f: number) => {
+    const achievements = [];
+    if (hp > 8) achievements.push(isCN ? "元气满满" : "Energetic");
+    else if (hp < 3) achievements.push(isCN ? "极度疲劳" : "Exhausted");
+    
+    if (xp > 7) achievements.push(isCN ? "突飞猛进" : "Leaps & Bounds");
+    else if (xp < 3) achievements.push(isCN ? "潜心修行" : "Meditation");
+
+    if (f < 2) achievements.push(isCN ? "饥肠辘辘" : "Hungry");
+
+    return achievements.length > 0 ? achievements.join(" • ") : (isCN ? "平稳发展" : "Stable");
+  };
 
   const renderHome = () => {
-    const todayStr = new Date().toLocaleDateString(lang === 'cn' ? 'zh-CN' : lang === 'fr' ? 'fr-FR' : 'en-US', { 
-      year: 'numeric', month: 'long', day: 'numeric', weekday: 'short'
-    });
+    const today = new Date();
+    const todayStr = today.toISOString().split('T')[0];
+    const dayName = today.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+    const isNight = today.getHours() < 8 || today.getHours() >= 18;
 
     return (
       <div className={fontSizeClass}>
-        <div className="bg-slate-900/80 text-white p-6 pixel-border mb-4 backdrop-blur-md sticky top-0 z-40">
-          <div className="flex justify-between items-center">
-            <h1 className="pixel-font text-sm tracking-tighter">LIFE RPG</h1>
-            <div className="flex items-center gap-2">
-               <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse"></div>
-               <span className="text-[10px] pixel-font">ONLINE</span>
-            </div>
+        {/* Header */}
+        <div className="bg-[#1a1a2e] text-white p-6 pixel-border border-white/10 mb-6 flex justify-between items-start">
+          <div>
+            <h1 className="pixel-font text-2xl tracking-widest mb-1 font-black">PIXEL LIFE</h1>
+            <p className="pixel-font text-[14px] text-yellow-400 uppercase font-bold">{todayStr} {dayName}</p>
           </div>
-          <p className={`pixel-font ${isCN ? 'text-[14px]' : 'text-[12px]'} text-yellow-400 mt-2 uppercase`}>{todayStr}</p>
+          <div className="text-6xl">{isNight ? '🌙' : '☀️'}</div>
         </div>
 
+        {/* Oracle Box */}
         <div className="px-4">
-          <div className="bg-white/95 p-5 pixel-border mb-4 flex gap-5 items-center relative overflow-hidden active:bg-gray-50 transition-colors" onClick={() => fetchMotivation()}>
-            <div className="w-14 h-14 bg-indigo-100 flex items-center justify-center text-4xl pixel-border">🧙</div>
-            <div className="flex-1">
-              <p className={`pixel-font ${pixelLabelClass} text-gray-400 mb-1`}>{t.oracle}</p>
-              <p className="font-bold leading-tight">{motivation}</p>
+          <div className="bg-[#e5e5e5] p-6 pixel-border border-black mb-6 flex gap-6 items-center shadow-lg active:bg-gray-200 transition-colors" onClick={() => fetchMotivation()}>
+            <div className="w-20 h-20 bg-white pixel-border border-black flex items-center justify-center text-5xl overflow-hidden shrink-0">🧙</div>
+            <div className="flex-1 text-black">
+              <p className={`pixel-font text-[11px] text-gray-500 mb-1 font-bold uppercase`}>{isCN ? '生存状态' : 'STATUS'} : {isCN ? '勇者' : 'TRAVELER'}</p>
+              <p className="font-bold leading-tight text-[1.2em] pixel-font tracking-tight">{motivation}</p>
             </div>
           </div>
 
-          <StatusBar health={stats.health} hunger={stats.hunger} fontSize={fontSize} lang={lang} />
+          <StatusBar health={stats.health} hunger={stats.hunger} experience={stats.experience} fontSize={fontSize} lang={lang} />
 
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-3 px-1">
-              <h2 className={`pixel-font ${isCN ? 'text-[14px]' : 'text-[12px]'}`}>{t.quests}</h2>
-              <button onClick={() => { hapticFeedback(); setIsEditing('new'); }} className={`text-blue-600 pixel-font ${isCN ? 'text-[12px]' : 'text-[10px]'} underline`}>+{t.addQuest}</button>
-            </div>
-            
-            <div className="grid grid-cols-2 gap-4">
-              {quests.map((q, idx) => (
-                <div key={q.id} className="relative group">
-                  <button 
-                    onClick={(e) => handleAction(q, e)}
-                    className="w-full flex flex-col items-center p-5 bg-white/95 pixel-border hover:bg-yellow-50 active:scale-95 transition-all shadow-sm active:shadow-none"
-                  >
-                    <span className="text-5xl mb-3 drop-shadow-md">{q.icon}</span>
-                    <span className={`pixel-font ${isCN ? 'text-[12px]' : 'text-[10px]'} text-center mb-1 leading-tight min-h-[40px] flex items-center justify-center`}>{q.title}</span>
-                    <div className={`flex gap-3 ${isCN ? 'text-[13px]' : 'text-[11px]'} font-bold text-gray-500 mt-2`}>
-                      <span className="flex items-center gap-1">❤️{q.hpImpact >= 0 ? '+' : ''}{q.hpImpact}</span>
-                      <span className="flex items-center gap-1">🍗{q.hungerImpact >= 0 ? '+' : ''}{q.hungerImpact}</span>
-                    </div>
-                  </button>
-                  
-                  <button 
-                    onClick={(e) => { e.stopPropagation(); hapticFeedback(); setIsEditing(q.id); }} 
-                    className="absolute top-2 right-2 w-10 h-10 bg-blue-500/10 hover:bg-blue-500/30 flex items-center justify-center rounded-full"
-                  >
-                    <span className="text-blue-600 text-lg">✎</span>
-                  </button>
+          {/* Action Area */}
+          <div className="flex justify-between items-center mb-4 px-2">
+            <h2 className={`pixel-font text-[0.8em] text-white font-black uppercase`}>{t.quests}</h2>
+            <button onClick={() => { hapticFeedback(); setIsEditing('new'); }} className="text-yellow-400 pixel-font text-[0.7em] underline font-bold tracking-tighter">+{t.addQuest}</button>
+          </div>
+
+          {/* Strict 2x2 Grid */}
+          <div className="grid grid-cols-2 gap-4 mb-8">
+            {quests.map((q, idx) => (
+              <div key={q.id} className="relative aspect-square">
+                <button 
+                  onClick={(e) => handleAction(q, e)}
+                  className="w-full h-full bg-white p-4 pixel-border border-black flex flex-col items-center justify-center space-y-2 active:scale-95 transition-transform shadow-xl overflow-hidden"
+                >
+                  <span className="text-5xl">{q.icon}</span>
+                  <span className="pixel-font text-[0.8em] text-black font-black text-center leading-none">{q.title}</span>
+                  <div className="flex flex-col items-center">
+                    {q.hpImpact !== 0 && (
+                      <span className={`pixel-font text-[0.6em] font-black ${q.hpImpact > 0 ? 'text-green-600' : 'text-red-500'}`}>
+                        {q.hpImpact > 0 ? '+' : ''}{q.hpImpact} HP
+                      </span>
+                    )}
+                    {q.xpImpact ? (
+                      <span className="pixel-font text-[0.6em] font-black text-blue-500">+{q.xpImpact} XP</span>
+                    ) : null}
+                  </div>
+                </button>
+                
+                {/* Control Icons Overlay */}
+                <div className="absolute top-1 right-1 flex flex-col gap-1">
+                  <button onClick={(e) => { e.stopPropagation(); hapticFeedback(); setIsEditing(q.id); }} className="w-8 h-8 bg-blue-500 text-white pixel-border border-black flex items-center justify-center text-xs shadow-md">✎</button>
+                  <button onClick={(e) => { e.stopPropagation(); moveQuest(idx, 'up'); }} className="w-8 h-8 bg-gray-500 text-white pixel-border border-black flex items-center justify-center text-xs shadow-md">▲</button>
+                  <button onClick={(e) => { e.stopPropagation(); moveQuest(idx, 'down'); }} className="w-8 h-8 bg-gray-500 text-white pixel-border border-black flex items-center justify-center text-xs shadow-md">▼</button>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </div>
 
-          <div className="bg-indigo-900/95 p-5 pixel-border text-white mb-10 min-h-[120px]">
-            <h3 className={`pixel-font ${pixelLabelClass} text-indigo-300 mb-3 uppercase tracking-widest`}>{t.systemLogs}</h3>
-            <div className="space-y-3">
+          {/* System Terminal */}
+          <div className="bg-[#1a1a2e] p-6 pixel-border border-white/10 text-white mb-10 shadow-inner overflow-hidden">
+            <p className="text-[0.6em] pixel-font text-gray-500 mb-5 font-bold uppercase tracking-widest">{t.systemLogs}</p>
+            <div className="space-y-4">
               {logs.map(log => (
-                <div key={log.id} className="text-[14px] flex justify-between border-l-4 border-indigo-400 pl-4 py-1 bg-indigo-800/20">
-                  <span>&gt; {log.message}</span>
-                  <span className="text-yellow-400 font-bold">{log.impact}</span>
+                <div key={log.id} className="text-[0.8em] flex justify-between items-center border-l-4 border-yellow-500 pl-4 py-2 bg-white/5">
+                  <span className="opacity-80 font-bold truncate pr-2">› {log.message}</span>
+                  <span className="text-yellow-400 font-black shrink-0">{log.impact}</span>
                 </div>
               ))}
-              {logs.length === 0 && <p className="opacity-30 italic text-[14px]">Logs are empty...</p>}
+              {logs.length === 0 && <p className="opacity-20 italic text-center text-[0.8em]">JOURNAL IS CLEAR...</p>}
             </div>
           </div>
         </div>
@@ -239,109 +268,121 @@ const App: React.FC = () => {
     const end = new Date(viewDate.getFullYear(), viewDate.getMonth() + 1, 0);
     const startDay = start.getDay();
     const days = [];
-    
     for(let i=0; i<startDay; i++) days.push(null);
     for(let i=1; i<=end.getDate(); i++) days.push(new Date(viewDate.getFullYear(), viewDate.getMonth(), i));
 
-    const monthName = viewDate.toLocaleString(lang === 'cn' ? 'zh-CN' : lang === 'fr' ? 'fr-FR' : 'en-US', { month: 'long', year: 'numeric' });
-
     return (
-      <div className={`bg-white/95 p-8 pixel-border min-h-screen ${fontSizeClass}`}>
-        <div className="flex justify-between items-center mb-8 border-b-4 border-black pb-4 sticky top-0 bg-white/95 z-40 p-2">
-          <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setMonth(viewDate.getMonth() - 1))); }} className="pixel-button text-[14px] p-2">PREV</button>
-          <div onClick={() => { hapticFeedback(); setIsYearPicker(!isYearPicker); }} className="cursor-pointer active:scale-95 px-5 py-2 pixel-border bg-white shadow-md transition-all">
-            <h2 className={`pixel-font ${isCN ? 'text-[14px]' : 'text-[12px]'} text-center font-bold`}>{monthName.toUpperCase()}</h2>
+      <div className={`bg-white p-8 pixel-border border-black min-h-screen ${fontSizeClass}`}>
+        <div className="flex justify-between items-center mb-8 border-b-4 border-black pb-6 sticky top-0 bg-white z-20">
+          <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setMonth(viewDate.getMonth() - 1))); }} className="pixel-button text-[0.7em] font-black">PREV</button>
+          <div onClick={() => { hapticFeedback(); setIsYearPicker(!isYearPicker); }} className="cursor-pointer active:scale-95 px-4 py-2 pixel-border border-black bg-yellow-50">
+            <h2 className="pixel-font text-[0.8em] font-black uppercase">{viewDate.toLocaleString(lang === 'cn' ? 'zh-CN' : 'en-US', { month: 'long', year: 'numeric' })}</h2>
           </div>
-          <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setMonth(viewDate.getMonth() + 1))); }} className="pixel-button text-[14px] p-2">NEXT</button>
+          <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setMonth(viewDate.getMonth() + 1))); }} className="pixel-button text-[0.7em] font-black">NEXT</button>
         </div>
 
         {isYearPicker && (
-          <div className="mb-8 p-6 bg-yellow-50 pixel-border border-dashed flex justify-around items-center">
-            <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setFullYear(viewDate.getFullYear() - 1))); }} className="pixel-button text-[12px]">-1Y</button>
-            <span className="pixel-font text-[18px] font-black">{viewDate.getFullYear()}</span>
-            <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setFullYear(viewDate.getFullYear() + 1))); }} className="pixel-button text-[12px]">+1Y</button>
-            <button onClick={() => setIsYearPicker(false)} className="text-[12px] pixel-font text-red-500 ml-4">DONE</button>
+          <div className="mb-8 p-6 bg-yellow-50 pixel-border border-black flex justify-around items-center border-dashed">
+            <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setFullYear(viewDate.getFullYear() - 1))); }} className="pixel-button text-[0.6em]">-1 YEAR</button>
+            <span className="pixel-font text-[1em] font-black">{viewDate.getFullYear()}</span>
+            <button onClick={() => { hapticFeedback(); setViewDate(new Date(viewDate.setFullYear(viewDate.getFullYear() + 1))); }} className="pixel-button text-[0.6em]">+1 YEAR</button>
           </div>
         )}
 
-        <div className="grid grid-cols-7 gap-2 text-center font-black mb-4">
-          {['S','M','T','W','T','F','S'].map(d => <div key={d} className="opacity-40 text-[14px]">{d}</div>)}
-        </div>
-
-        <div className="grid grid-cols-7 gap-3">
+        <div className="grid grid-cols-7 gap-2 mb-6 text-center">
+          {['S','M','T','W','T','F','S'].map(d => <div key={d} className="pixel-font text-[0.6em] opacity-40 font-black">{d}</div>)}
           {days.map((d, i) => {
-            if (!d) return <div key={`empty-${i}`} className="aspect-square opacity-0"></div>;
+            if (!d) return <div key={`empty-${i}`} />;
             const iso = d.toISOString().split('T')[0];
             const entry = history.find(h => h.date === iso);
             const isToday = iso === new Date().toISOString().split('T')[0];
-            
             return (
-              <div key={iso} className={`aspect-square pixel-border p-1 flex flex-col items-center justify-center relative active:bg-blue-50 ${isToday ? 'bg-yellow-100 ring-3 ring-yellow-400' : 'bg-gray-50'}`}>
-                <span className="text-[12px] absolute top-1 left-1 font-bold">{d.getDate()}</span>
-                {entry ? (
-                  <div className="flex flex-col items-center mt-4">
-                    <div className="w-3.5 h-3.5 bg-red-500 mb-1 pixel-border border-[1px]" style={{ opacity: Math.max(0.2, entry.hp / 10) }}></div>
-                    <div className="w-3.5 h-3.5 bg-orange-400 pixel-border border-[1px]" style={{ opacity: Math.max(0.2, entry.hunger / 10) }}></div>
-                  </div>
-                ) : <span className="text-[12px] opacity-10">.</span>}
-              </div>
+              <button 
+                key={iso}
+                onClick={() => { setSelectedDay(entry || { date: iso, hp: 0, hunger: 0, xp: 0 }); hapticFeedback(); }}
+                className={`aspect-square pixel-border border-black p-1 flex flex-col items-center justify-center relative ${isToday ? 'bg-yellow-200 ring-2 ring-yellow-500 shadow-md' : 'bg-gray-50'} active:bg-blue-100 transition-colors`}
+              >
+                <span className="text-[0.6em] absolute top-1 left-1 font-bold">{d.getDate()}</span>
+                {entry && (
+                   <div className="flex gap-1 mt-4">
+                      <div className="w-2.5 h-2.5 bg-red-500 pixel-border border-[1px] opacity-80" />
+                      {entry.xp > 5 && <div className="w-2.5 h-2.5 bg-green-500 pixel-border border-[1px] opacity-80" />}
+                   </div>
+                )}
+              </button>
             );
           })}
         </div>
 
-        <div className="mt-12 p-6 bg-gray-100 pixel-border border-dashed">
-          <p className={`pixel-font ${pixelLabelClass} mb-4 font-bold`}>{isCN ? '图例说明' : 'LEGEND:'}</p>
-          <div className="space-y-4">
-            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 bg-red-500 pixel-border"></div>
-              <span className="text-[16px] font-black">{isCN ? '生命值 (0-10)' : 'HEALTH (0-10)'}</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="w-8 h-8 bg-orange-400 pixel-border"></div>
-              <span className="text-[16px] font-black">{isCN ? '饱食度 (0-10)' : 'HUNGER (0-10)'}</span>
+        {selectedDay && (
+          <div className="mt-10 p-8 bg-[#1a1a2e] text-white pixel-border border-white/20 shadow-2xl relative">
+            <button onClick={() => setSelectedDay(null)} className="absolute top-4 right-4 pixel-font text-red-400 text-[0.8em] font-black">CLOSE</button>
+            <h3 className="pixel-font text-[1em] mb-6 border-b border-white/10 pb-4 font-black">{t.summary}</h3>
+            <div className="space-y-6">
+               <p className="text-yellow-400 pixel-font text-[0.8em] font-bold">{selectedDay.date}</p>
+               <div className="grid grid-cols-3 gap-4 text-center py-6 bg-white/5 pixel-border border-white/10">
+                  <div>
+                    <p className="text-[0.5em] pixel-font opacity-50 mb-1 uppercase">HP</p>
+                    <p className="text-[1.2em] font-black text-red-500">{selectedDay.hp}</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.5em] pixel-font opacity-50 mb-1 uppercase">ENERGY</p>
+                    <p className="text-[1.2em] font-black text-orange-400">{selectedDay.hunger}</p>
+                  </div>
+                  <div>
+                    <p className="text-[0.5em] pixel-font opacity-50 mb-1 uppercase">EXP</p>
+                    <p className="text-[1.2em] font-black text-green-400">{selectedDay.xp}</p>
+                  </div>
+               </div>
+               <div className="p-5 bg-white/5 border-l-8 border-yellow-500">
+                  <p className="text-[0.6em] pixel-font opacity-50 mb-2 uppercase font-black">{t.status}</p>
+                  <p className="text-[1.2em] font-black text-yellow-500 leading-tight">
+                    {getStatusAchievement(selectedDay.hp, selectedDay.xp, selectedDay.hunger)}
+                  </p>
+               </div>
             </div>
           </div>
-        </div>
+        )}
       </div>
     );
   };
 
   const renderSettings = () => (
-    <div className={`bg-white p-10 pixel-border min-h-screen space-y-10 ${fontSizeClass}`}>
-      <h2 className={`pixel-font ${isCN ? 'text-[18px]' : 'text-[14px]'} border-b-3 border-black pb-4`}>{t.settings}</h2>
+    <div className={`bg-white p-10 pixel-border border-black min-h-screen space-y-12 ${fontSizeClass}`}>
+      <h2 className={`pixel-font text-[1.2em] border-b-8 border-black pb-6 font-black uppercase`}>{t.settings}</h2>
       
-      <div className="space-y-4">
-        <p className={`pixel-font ${pixelLabelClass} opacity-60`}>{t.language}</p>
-        <div className="grid grid-cols-1 gap-3">
-          {(['en', 'cn', 'fr'] as Language[]).map(l => (
-            <button key={l} onClick={() => { hapticFeedback(); setLang(l); playBeep(); }} className={`p-4 pixel-border pixel-font text-[14px] flex justify-between items-center ${lang === l ? 'bg-blue-500 text-white' : 'bg-white'}`}>
-              <span>{l === 'cn' ? '简体中文' : l === 'en' ? 'ENGLISH' : 'FRANÇAIS'}</span>
+      <div className="space-y-6">
+        <p className="pixel-font text-[0.7em] opacity-60 font-black uppercase tracking-widest">{t.language}</p>
+        <div className="grid grid-cols-1 gap-4">
+          {(['en', 'cn'] as Language[]).map(l => (
+            <button key={l} onClick={() => { setLang(l); hapticFeedback(); }} className={`p-6 pixel-border border-black pixel-font text-[0.8em] flex justify-between font-black shadow-md ${lang === l ? 'bg-black text-white' : 'bg-white'}`}>
+              <span>{l === 'cn' ? '简体中文' : 'ENGLISH'}</span>
               {lang === l && <span>✓</span>}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="space-y-4">
-        <p className={`pixel-font ${pixelLabelClass} opacity-60`}>{t.fontSize}</p>
+      <div className="space-y-6">
+        <p className="pixel-font text-[0.7em] opacity-60 font-black uppercase tracking-widest">{t.fontSize}</p>
         <div className="grid grid-cols-3 gap-4">
           {(['small', 'medium', 'large'] as FontSize[]).map(f => (
-            <button key={f} onClick={() => { hapticFeedback(); setFontSize(f); playBeep(); }} className={`p-4 pixel-border pixel-font ${isCN ? 'text-[12px]' : 'text-[10px]'} ${fontSize === f ? 'bg-indigo-500 text-white' : 'bg-white'}`}>
+            <button key={f} onClick={() => { setFontSize(f); hapticFeedback(); }} className={`p-4 pixel-border border-black pixel-font text-[0.6em] font-black shadow-md ${fontSize === f ? 'bg-indigo-600 text-white' : 'bg-white'}`}>
               {f.toUpperCase()}
             </button>
           ))}
         </div>
       </div>
 
-      <div className="p-5 bg-gray-50 pixel-border flex justify-between items-center">
-        <span className={`pixel-font ${pixelLabelClass}`}>{t.sound}</span>
-        <button onClick={() => { hapticFeedback(); setSfx(!sfx); playBeep(); }} className={`px-8 py-3 pixel-border pixel-font ${isCN ? 'text-[12px]' : 'text-[10px]'} ${sfx ? 'bg-green-400 text-white' : 'bg-red-400 text-white'}`}>
+      <div className="p-6 bg-gray-50 pixel-border border-black flex justify-between items-center shadow-lg">
+        <span className="pixel-font text-[0.8em] font-black uppercase">{t.sound}</span>
+        <button onClick={() => { hapticFeedback(); setSfx(!sfx); playBeep(); }} className={`px-10 py-4 pixel-border border-black pixel-font text-[0.7em] font-black ${sfx ? 'bg-green-500' : 'bg-red-500 text-white'}`}>
           {sfx ? t.on : t.off}
         </button>
       </div>
 
-      <div className="pt-12">
-        <button onClick={() => { hapticFeedback('heavy'); if(confirm('Factory Reset?')) { localStorage.clear(); location.reload(); } }} className="w-full p-4 bg-red-600 text-white pixel-border pixel-font text-[14px]">RESET ALL DATA</button>
+      <div className="pt-20">
+        <button onClick={() => { if(confirm('WIPE ALL DATA?')) { localStorage.clear(); location.reload(); } }} className="w-full p-6 bg-red-600 text-white pixel-border border-black pixel-font text-[0.8em] font-black shadow-2xl active:translate-y-2 active:shadow-none transition-all uppercase">FACTORY RESET</button>
       </div>
     </div>
   );
@@ -354,74 +395,75 @@ const App: React.FC = () => {
         {activeTab === 'settings' && renderSettings()}
       </div>
 
-      {/* BOTTOM SHEET EDITOR */}
+      {/* Editor Modal */}
       {isEditing && (
-        <div className="fixed inset-0 z-[110] flex items-end">
-          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={() => setIsEditing(null)}></div>
-          <form onSubmit={saveQuest} className="bottom-sheet relative w-full bg-white pixel-border border-b-0 p-8 rounded-t-3xl shadow-2xl space-y-6">
-            <div className="w-16 h-1.5 bg-gray-300 rounded-full mx-auto mb-4"></div>
-            <h2 className={`pixel-font ${isCN ? 'text-[16px]' : 'text-[14px]'} border-b-3 border-black pb-4`}>{isEditing === 'new' ? t.addQuest : t.edit}</h2>
+        <div className="fixed inset-0 z-[120] flex items-end">
+          <div className="absolute inset-0 bg-black/80 backdrop-blur-md" onClick={() => setIsEditing(null)}></div>
+          <form onSubmit={saveQuest} className="bottom-sheet relative w-full bg-white pixel-border border-black border-b-0 p-10 rounded-t-[50px] shadow-2xl space-y-8">
+            <div className="w-24 h-2 bg-gray-300 rounded-full mx-auto mb-6"></div>
+            <h2 className="pixel-font text-[1.2em] font-black border-b-8 border-black pb-4 uppercase">{isEditing === 'new' ? t.addQuest : t.edit}</h2>
             
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-[10px] pixel-font opacity-40">QUEST TITLE</label>
-                <input name="title" autoFocus placeholder="TITLE" required className="w-full p-4 pixel-border text-[16px] outline-none focus:bg-yellow-50" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.title : ''} />
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[0.6em] pixel-font font-black opacity-40 uppercase">TITLE</label>
+                <input name="title" autoFocus required className="w-full p-6 pixel-border border-black text-[1em] font-bold outline-none focus:bg-yellow-50" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.title : ''} />
               </div>
               
-              <div className="grid grid-cols-3 gap-4">
-                 <div className="space-y-1">
-                    <label className="text-[10px] pixel-font opacity-40 text-center block">ICON</label>
-                    <input name="icon" placeholder="Icon" required className="w-full p-4 pixel-border text-[20px] text-center" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.icon : '⭐'} />
+              <div className="grid grid-cols-2 gap-6">
+                 <div className="space-y-2">
+                    <label className="text-[0.6em] pixel-font font-black opacity-40 uppercase">ICON</label>
+                    <input name="icon" required className="w-full p-6 pixel-border border-black text-[2em] text-center" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.icon : '⭐'} />
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] pixel-font opacity-40 text-center block">HP +/-</label>
-                    <input name="hp" type="number" placeholder="HP" required className="w-full p-4 pixel-border text-[16px] text-center" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.hpImpact : 0} />
+                 <div className="space-y-2">
+                    <label className="text-[0.6em] pixel-font font-black opacity-40 uppercase">HP IMPACT</label>
+                    <input name="hp" type="number" required className="w-full p-6 pixel-border border-black text-[1em] text-center font-black" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.hpImpact : 0} />
                  </div>
-                 <div className="space-y-1">
-                    <label className="text-[10px] pixel-font opacity-40 text-center block">HUN +/-</label>
-                    <input name="hunger" type="number" placeholder="Food" required className="w-full p-4 pixel-border text-[16px] text-center" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.hungerImpact : 0} />
+                 <div className="space-y-2">
+                    <label className="text-[0.6em] pixel-font font-black opacity-40 uppercase">FOOD IMPACT</label>
+                    <input name="hunger" type="number" required className="w-full p-6 pixel-border border-black text-[1em] text-center font-black" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.hungerImpact : 0} />
+                 </div>
+                 <div className="space-y-2">
+                    <label className="text-[0.6em] pixel-font font-black opacity-40 uppercase">XP GAIN</label>
+                    <input name="xp" type="number" required className="w-full p-6 pixel-border border-black text-[1em] text-center font-black" defaultValue={isEditing !== 'new' ? quests.find(q => q.id === isEditing)?.xpImpact : 0} />
                  </div>
               </div>
             </div>
 
-            <div className="flex gap-4 pt-4">
-              <button type="submit" className="flex-1 bg-green-500 text-white p-5 pixel-border pixel-font text-[14px] active:scale-95">{t.save}</button>
-              <button type="button" onClick={() => setIsEditing(null)} className="flex-1 bg-gray-400 text-white p-5 pixel-border pixel-font text-[14px] active:scale-95">{t.cancel}</button>
+            <div className="flex gap-4 pt-6">
+              <button type="submit" className="flex-1 bg-green-500 text-white p-6 pixel-border border-black pixel-font text-[0.8em] font-black shadow-lg">OK</button>
+              <button type="button" onClick={() => setIsEditing(null)} className="flex-1 bg-gray-400 text-white p-6 pixel-border border-black pixel-font text-[0.8em] font-black shadow-lg">BACK</button>
             </div>
             
             {isEditing !== 'new' && (
-              <button type="button" onClick={() => { hapticFeedback('heavy'); setQuests(prev => prev.filter(x => x.id !== isEditing)); setIsEditing(null); }} className="w-full bg-red-100 text-red-600 p-3 pixel-border pixel-font text-[12px] hover:bg-red-200">{t.delete}</button>
+              <button type="button" onClick={() => { hapticFeedback('heavy'); setQuests(prev => prev.filter(x => x.id !== isEditing)); setIsEditing(null); }} className="w-full bg-red-100 text-red-600 p-4 pixel-border border-red-200 pixel-font text-[0.6em] font-black uppercase">DELETE THIS QUEST</button>
             )}
           </form>
         </div>
       )}
 
-      {/* NAVIGATION BAR - NATIVE APP STYLE */}
-      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white/95 backdrop-blur-md border-t-5 border-black px-6 pt-3 pb-[calc(1.5rem+env(safe-area-inset-bottom))] flex justify-around z-[100] shadow-[0_-10px_30px_rgba(0,0,0,0.4)]">
-        <button onClick={() => { hapticFeedback(); setActiveTab('home'); playBeep(200); }} className={`flex flex-col items-center flex-1 transition-all ${activeTab === 'home' ? 'text-black scale-110' : 'opacity-30'}`}>
-          <span className="text-3xl mb-1">🏠</span>
-          <span className={`pixel-font ${isCN ? 'text-[12px]' : 'text-[9px]'} font-bold`}>{t.home}</span>
-          {activeTab === 'home' && <div className="w-1.5 h-1.5 bg-black rounded-full mt-1"></div>}
+      {/* Nav Bar */}
+      <nav className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-[#2b2b3b] border-t-8 border-yellow-500 px-6 pt-6 pb-[calc(2.5rem+env(safe-area-inset-bottom))] flex justify-around z-[110] shadow-2xl">
+        <button onClick={() => { hapticFeedback(); setActiveTab('home'); }} className={`flex flex-col items-center flex-1 transition-all ${activeTab === 'home' ? 'text-yellow-400 scale-125' : 'text-gray-500 opacity-60'}`}>
+          <span className="text-5xl mb-2">🏠</span>
+          <span className={`pixel-font text-[0.6em] font-black uppercase`}>{t.home}</span>
         </button>
-        <button onClick={() => { hapticFeedback(); setActiveTab('calendar'); playBeep(200); }} className={`flex flex-col items-center flex-1 transition-all ${activeTab === 'calendar' ? 'text-black scale-110' : 'opacity-30'}`}>
-          <span className="text-3xl mb-1">📅</span>
-          <span className={`pixel-font ${isCN ? 'text-[12px]' : 'text-[9px]'} font-bold`}>{t.calendar}</span>
-          {activeTab === 'calendar' && <div className="w-1.5 h-1.5 bg-black rounded-full mt-1"></div>}
+        <button onClick={() => { hapticFeedback(); setActiveTab('calendar'); }} className={`flex flex-col items-center flex-1 transition-all ${activeTab === 'calendar' ? 'text-yellow-400 scale-125' : 'text-gray-500 opacity-60'}`}>
+          <span className="text-5xl mb-2">📅</span>
+          <span className={`pixel-font text-[0.6em] font-black uppercase`}>{t.calendar}</span>
         </button>
-        <button onClick={() => { hapticFeedback(); setActiveTab('settings'); playBeep(200); }} className={`flex flex-col items-center flex-1 transition-all ${activeTab === 'settings' ? 'text-black scale-110' : 'opacity-30'}`}>
-          <span className="text-3xl mb-1">⚙️</span>
-          <span className={`pixel-font ${isCN ? 'text-[12px]' : 'text-[9px]'} font-bold`}>{t.settings}</span>
-          {activeTab === 'settings' && <div className="w-1.5 h-1.5 bg-black rounded-full mt-1"></div>}
+        <button onClick={() => { hapticFeedback(); setActiveTab('settings'); }} className={`flex flex-col items-center flex-1 transition-all ${activeTab === 'settings' ? 'text-yellow-400 scale-125' : 'text-gray-500 opacity-60'}`}>
+          <span className="text-5xl mb-2">⚙️</span>
+          <span className={`pixel-font text-[0.6em] font-black uppercase`}>{t.settings}</span>
         </button>
       </nav>
 
-      {/* CLICK EFFECT LAYER */}
+      {/* Bounce Effects */}
       {clickEffect && (
         <div 
-          className="fixed pointer-events-none z-[200] text-red-500 font-bold pixel-font text-4xl animate-ping select-none"
-          style={{ left: clickEffect.x - 30, top: clickEffect.y - 30 }}
+          className="fixed pointer-events-none z-[200] text-yellow-400 font-black pixel-font text-2xl animate-bounce select-none whitespace-nowrap bg-black/50 px-4 py-2 pixel-border border-yellow-400 shadow-2xl"
+          style={{ left: clickEffect.x - 30, top: clickEffect.y - 80 }}
         >
-          ❤️
+          {clickEffect.text}
         </div>
       )}
     </Background>

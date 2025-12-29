@@ -7,6 +7,7 @@ export interface Quest {
   title: string;
   hpImpact: number;
   hungerImpact: number;
+  xpImpact?: number; // Added XP impact
   icon: string;
   isCustom?: boolean;
 }
@@ -21,6 +22,7 @@ export interface DailyStats {
   date: string; // YYYY-MM-DD
   hp: number;
   hunger: number;
+  xp: number; // Added XP to history
 }
 
 export interface GameLog {
@@ -42,8 +44,8 @@ export interface Translations {
   settings: string;
   health: string;
   hunger: string;
+  xp: string;
   oracle: string;
-  // Added quests property to match usage in App.tsx
   quests: string;
   systemLogs: string;
   done: string;
@@ -61,4 +63,6 @@ export interface Translations {
   reorder: string;
   prevMonth: string;
   nextMonth: string;
+  status: string;
+  summary: string;
 }
