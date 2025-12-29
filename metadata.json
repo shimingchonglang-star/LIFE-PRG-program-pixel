@@ -1,0 +1,7 @@
+{
+  "name": "Copy of Copy of LifeRPG: Pixel Self-Discipline",
+  "description": "A gamified self-discipline application with pixel art aesthetics, featuring health and hunger mechanics that react to your real-life habits.",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}
